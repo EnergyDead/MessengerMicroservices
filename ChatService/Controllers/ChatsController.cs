@@ -124,6 +124,30 @@ public class ChatsController : ControllerBase
 
         return Ok(ToChatResponse(chat));
     }
+    
+    /// <summary>
+    /// Получает все чаты, в которых участвует заданный пользователь.
+    /// </summary>
+    [HttpGet("user/{userId:guid}")]
+    public async Task<ActionResult<IEnumerable<ChatResponse>>> GetUserChats(Guid userId)
+    {
+        if (!await CheckUserExists(userId))
+        {
+            return NotFound($"User with ID {userId} does not exist.");
+        }
+
+        var chats = await _db.Chats
+            .Include(c => c.Participants)
+            .Where(c => c.Participants.Any(p => p.UserId == userId))
+            .ToListAsync();
+
+        if (chats.Count == 0)
+        {
+            return Ok(new List<ChatResponse>());
+        }
+
+        return Ok(chats.Select(ToChatResponse));
+    }
 
     /// <summary>
     /// Метод для проверки существования пользователя через UserService

@@ -1,5 +1,6 @@
 using MessageService.Data;
 using MessageService.Hubs;
+using MessageService.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,7 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IUserPresenceService, InMemoryUserPresenceService>();
 
 var app = builder.Build();
 
