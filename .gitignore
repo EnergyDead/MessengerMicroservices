@@ -1,0 +1,69 @@
+# General .NET build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.dll
+*.exe
+*.pdb
+*.tmp
+*.user
+*.log
+*.vspscc
+*.vssscc
+
+# Rider IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+*.kpf
+*.pid
+.DS_Store
+
+# Visual Studio files
+.vs/                  # Visual Studio temporary files
+*.suo                 # Solution User Options
+*.user                # Per-user Visual Studio settings
+*.config.user         # Per-user config file modifications
+*.dbmdl               # Visual Studio Database Project files
+*.jfm                 # Visual Studio Just-In-Time Debugger files
+*.pfx                 # Personal Information Exchange certificate files (often sensitive)
+*.publishsettings     # Publish profiles for Azure/IIS
+*.vsp
+*.trx
+*.webtest
+*.testsettings
+*.xrm
+
+# Package Manager files
+packages/             # NuGet packages directory (old style)
+*.nupkg               # NuGet package files
+*.snupkg              # NuGet symbol package files
+
+# Test results
+TestResults/
+*.coverage
+*.runsettings
+
+# SQL Server files
+*.mdf
+*.ldf
+*.sdf
+
+# Resharper files
+_ReSharper.*/
+*.resharper
+*.DotSettings.user
+
+# Mac/Linux system files
+.DS_Store
+.localized
+Thumbs.db
+
+# Misc
+UserSecrets/
+appsettings.Development.json # Often contains sensitive local settings
+appsettings.Production.json # Also can contain sensitive production settings
+appsettings.json # If sensitive data is directly in this file
+web.config # If sensitive data is directly in this file

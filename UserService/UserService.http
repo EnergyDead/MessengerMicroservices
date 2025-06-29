@@ -1,0 +1,20 @@
+### Create user
+POST http://localhost:5267/api/users
+Content-Type: application/json
+
+{
+  "name": "Руслан2",
+  "email": "ruslan@example.com"
+}
+
+
+### Get user by id ID
+@userId = 7da47317-c54c-40b8-b3f4-967773b45850
+
+GET http://localhost:5267/api/users/{{userId}}
+Accept: application/json
+
+
+### Invalid reqest (NotFound)
+GET http://localhost:5267/api/users/00000000-0000-0000-0000-000000000000
+Accept: application/json

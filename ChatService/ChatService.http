@@ -1,0 +1,75 @@
+### Create user
+POST http://localhost:5267/api/users
+Content-Type: application/json
+
+{
+  "name": "Jon",
+  "email": "userA@example.com"
+}
+
+### Create user
+POST http://localhost:5267/api/users
+Content-Type: application/json
+
+{
+  "name": "Bob",
+  "email": "userB@example.com"
+}
+
+### Create user
+POST http://localhost:5267/api/users
+Content-Type: application/json
+
+{
+  "name": "Anna",
+  "email": "userC@example.com"
+}
+
+### temp data
+@user1Id = 00000000-0000-0000-0000-000000000001
+@user2Id = 00000000-0000-0000-0000-000000000002
+@user3Id = 00000000-0000-0000-0000-000000000003
+@chatId = 00000000-0000-0000-0000-000000000000
+
+# 🚨 Убедитесь, что порт ChatService соответствует вашему запуску (например, 7011 или 5001)
+@chatServiceUrl = http://localhost:7011
+
+### Presonal chat Create
+POST {{chatServiceUrl}}/api/chats/personal
+Content-Type: application/json
+
+{
+  "user1Id": "{{user1Id}}",
+  "user2Id": "{{user2Id}}"
+}
+
+### Group Chat Create
+POST {{chatServiceUrl}}/api/chats/group
+Content-Type: application/json
+
+{
+  "name": "Group Chat",
+  "participantIds": [
+    "{{user1Id}}",
+    "{{user2Id}}",
+    "{{user3Id}}"
+  ]
+}
+
+### Get Chat by ID
+GET {{chatServiceUrl}}/api/chats/{{chatId}}
+Accept: application/json
+
+### Get all user chats
+GET {{chatServiceUrl}}/api/chats/user/{{user1Id}}
+Accept: application/json
+
+### Create chat with non-existent user ( 400 Bad Request)
+# Используйте фиктивный ID, чтобы увидеть проверку ChatService
+POST {{chatServiceUrl}}/api/chats/personal
+Content-Type: application/json
+
+{
+  "user1Id": "00000000-0000-0000-0000-000000000001",
+  "user2Id": "deadbeef-dead-beef-dead-beefdeadbeef"
+}
