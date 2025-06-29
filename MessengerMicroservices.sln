@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageService", "MessageSe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatClientConsole", "ChatClientConsole\ChatClientConsole.csproj", "{FC10B6D1-A81A-4C5F-A7D4-BE7BEB96263D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationService", "NotificationService\NotificationService.csproj", "{02E5B596-8DB4-423A-B90F-43E17728BBB5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{FC10B6D1-A81A-4C5F-A7D4-BE7BEB96263D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FC10B6D1-A81A-4C5F-A7D4-BE7BEB96263D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FC10B6D1-A81A-4C5F-A7D4-BE7BEB96263D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{02E5B596-8DB4-423A-B90F-43E17728BBB5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02E5B596-8DB4-423A-B90F-43E17728BBB5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02E5B596-8DB4-423A-B90F-43E17728BBB5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{02E5B596-8DB4-423A-B90F-43E17728BBB5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

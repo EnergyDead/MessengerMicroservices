@@ -2,6 +2,7 @@
 using MessageService.Data;
 using MessageService.DTOs;
 using MessageService.Models;
+using MessageService.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace MessageService.Hubs;
@@ -10,11 +11,13 @@ public class ChatHub: Hub
 {
     private readonly AppDbContext _db;
     private readonly HttpClient _httpClient;
+    private readonly IUserPresenceService _presenceService;
     private const string ChatServiceUrl = "http://localhost:5000"; // todo: вынести в настройки
 
-    public ChatHub(AppDbContext db)
+    public ChatHub(AppDbContext db, IUserPresenceService presenceService)
     {
-        _db = db;
+        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _presenceService = presenceService ?? throw new ArgumentNullException(nameof(presenceService));
         _httpClient = new HttpClient();
     }
     
@@ -77,15 +80,23 @@ public class ChatHub: Hub
             await Clients.Caller.SendAsync("ReceiveError", "You are not authorized to join this chat group.");
             return;
         }
+        
+        await _presenceService.UserConnected(userId, Context.ConnectionId);
 
         await Groups.AddToGroupAsync(Context.ConnectionId, chatId.ToString());
         await Clients.Caller.SendAsync("ReceiveInfo", $"Joined chat group: {chatId}");
+        await Clients.Group(chatId.ToString()).SendAsync("UserStatusChanged", userId, true);
     }
     
     public async Task LeaveChatGroup(Guid chatId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId.ToString());
         await Clients.Caller.SendAsync("ReceiveInfo", $"Left chat group: {chatId}");
+    }
+    
+    public async Task<bool> IsUserOnline(Guid userId)
+    {
+        return await _presenceService.IsUserOnline(userId);
     }
     
     private async Task<bool> CheckChatExists(Guid chatId)

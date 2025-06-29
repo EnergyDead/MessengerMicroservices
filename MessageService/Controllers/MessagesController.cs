@@ -1,7 +1,7 @@
-using System.Text.Json;
 using MessageService.Data;
 using MessageService.DTOs;
 using MessageService.Models;
+using MessageService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,10 +14,12 @@ public class MessagesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly HttpClient _httpClient;
     private const string ChatServiceUrl = "http://localhost:5000"; // todo: вынести в настройки
+    private readonly IUserPresenceService _presenceService;
 
-    public MessagesController(AppDbContext db)
+    public MessagesController(AppDbContext db, IUserPresenceService presenceService)
     {
-        _db = db;
+        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _presenceService = presenceService ?? throw new ArgumentNullException(nameof(presenceService));
         _httpClient = new HttpClient();
     }
 
@@ -43,36 +45,37 @@ public class MessagesController : ControllerBase
 
         return Ok(messages);
     }
+    
+    /// <summary>
+    /// Возвращает сообщения, отправленные после указанной временной метки.
+    /// Эндпоинт для NotificationService.
+    /// </summary>
+    [HttpGet("messages/since/{timestampMs:long}")]
+    public async Task<ActionResult<IEnumerable<Message>>> GetMessagesSince(long timestampMs)
+    {
+        var dateTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs);
+        var messages = await _db.Messages
+            .Where(m => m.Timestamp > dateTimeOffset)
+            .OrderBy(m => m.Timestamp)
+            .ToListAsync();
+        return Ok(messages);
+    }
+    
+    /// <summary>
+    /// Проверяет, находится ли пользователь онлайн.
+    /// Эндпоинт для NotificationService.
+    /// </summary>
+    [HttpGet("users/online/{userId:guid}")]
+    public async Task<ActionResult<bool>> IsUserOnline(Guid userId)
+    {
+        var isOnline = await _presenceService.IsUserOnline(userId);
+        return Ok(isOnline);
+    }
 
     private async Task<bool> CheckChatExists(Guid chatId)
     {
         var response = await _httpClient.GetAsync($"{ChatServiceUrl}/api/chats/{chatId}");
         return response.IsSuccessStatusCode;
-    }
-
-    private async Task<bool> CheckUserIsParticipant(Guid chatId, Guid userId)
-    {
-        try
-        {
-            var response = await _httpClient.GetAsync($"{ChatServiceUrl}/api/chats/{chatId}");
-            if (!response.IsSuccessStatusCode)
-            {
-                return false;
-            }
-
-            var jsonResponse = await response.Content.ReadAsStringAsync();
-            // Используем ChatServiceChatResponse из пространства имен MessageService.Hubs
-            // или создадим такой же DTO в DTOs контроллера, если не хотим зависеть от Hubs
-            var chatResponse = JsonSerializer.Deserialize<ChatServiceChatResponse>(jsonResponse,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            return chatResponse?.ParticipantIds?.Contains(userId) ?? false;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error checking participant: {ex.Message}");
-            return false;
-        }
     }
 
     private static MessageResponse ToMessageResponse(Message message)
