@@ -3,8 +3,9 @@ using UserService.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseInMemoryDatabase("UsersDb")); // todo: use sql later
+    options.UseSqlServer(connectionString));
 
 
 // Add services to the container.

@@ -8,8 +8,9 @@ var builder = WebApplication.CreateBuilder(args);
 var messageServiceUrl = builder.Configuration["MessageService:Url"] ?? "http://localhost:5240";
 var userServiceUrl = builder.Configuration["UserService:Url"] ?? "http://localhost:5267";
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<NotificationDbContext>(options =>
-    options.UseInMemoryDatabase("NotificationDb"));
+    options.UseSqlServer(connectionString));
 
 builder.Services.AddHttpClient("MessageServiceApi", client =>
 {

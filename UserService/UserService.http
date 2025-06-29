@@ -3,13 +3,13 @@ POST http://localhost:5267/api/users
 Content-Type: application/json
 
 {
-  "name": "Руслан2",
+  "name": "Руслан",
   "email": "ruslan@example.com"
 }
 
 
 ### Get user by id ID
-@userId = 7da47317-c54c-40b8-b3f4-967773b45850
+@userId = 879d9069-3e20-4180-aa37-c4ee85cd55c5
 
 GET http://localhost:5267/api/users/{{userId}}
 Accept: application/json

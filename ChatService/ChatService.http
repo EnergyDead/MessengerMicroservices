@@ -26,13 +26,13 @@ Content-Type: application/json
 }
 
 ### temp data
-@user1Id = 00000000-0000-0000-0000-000000000001
-@user2Id = 00000000-0000-0000-0000-000000000002
+@user1Id = 1fb23288-ea09-4160-bd1f-57323c7526bc
+@user2Id = 879d9069-3e20-4180-aa37-c4ee85cd55c5
 @user3Id = 00000000-0000-0000-0000-000000000003
-@chatId = 00000000-0000-0000-0000-000000000000
+@chatId = 69e9c839-2801-42a9-aa82-fc9a7d280e84
 
 # 🚨 Убедитесь, что порт ChatService соответствует вашему запуску (например, 7011 или 5001)
-@chatServiceUrl = http://localhost:7011
+@chatServiceUrl = http://localhost:5000
 
 ### Presonal chat Create
 POST {{chatServiceUrl}}/api/chats/personal
