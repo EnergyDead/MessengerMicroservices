@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace ChatClientConsole
 {
@@ -18,6 +19,8 @@ namespace ChatClientConsole
         private static readonly HttpClient HttpClient = new();
         private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+        private static readonly ConcurrentDictionary<Guid, ChatMessage> _currentChatMessages = new();
+
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -25,7 +28,7 @@ namespace ChatClientConsole
             Console.WriteLine("--- Консольный клиент SignalR для чата ---");
 
             await ChooseUserAction();
-            
+
             if (_currentUserId == Guid.Empty)
             {
                 Console.WriteLine("Не удалось войти или создать пользователя. Завершение.");
@@ -191,8 +194,6 @@ namespace ChatClientConsole
                 }
             }
         }
-        
-        
 
         private static async Task ViewExistingChatsAndJoin()
         {
@@ -297,76 +298,74 @@ namespace ChatClientConsole
 
                 switch (chatTypeChoice)
                 {
-                    // Личный чат
                     case "1":
-                    {
-                        Console.Write("Введите ID второго пользователя (GUID): ");
-                        var user2IdString = Console.ReadLine() ?? "";
-                        if (!Guid.TryParse(user2IdString, out var user2Id))
                         {
-                            Console.WriteLine("Некорректный ID пользователя.");
-                            return;
-                        }
-
-                        // Дополнительная проверка: существует ли второй пользователь
-                        if (!await CheckUserExists(user2Id))
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine($"Пользователь с ID {user2Id} не существует.");
-                            Console.ResetColor();
-                            return;
-                        }
-                        
-                        requestBody = JsonSerializer.Serialize(new { user1Id = _currentUserId, user2Id });
-                        response = await HttpClient.PostAsync($"{ChatServiceUrl}/api/chats/personal",
-                            new StringContent(requestBody, Encoding.UTF8, "application/json"));
-                        break;
-                    }
-                    // Групповой чат
-                    case "2":
-                    {
-                        Console.Write("Введите название группы: ");
-                        string groupName = Console.ReadLine() ?? "";
-
-                        Console.Write("Введите ID участников через запятую (минимум 2 других пользователя): ");
-                        string participantIdsString = Console.ReadLine() ?? "";
-                        var participantGuids = new List<Guid>();
-
-                        foreach (var idStr in participantIdsString.Split(','))
-                        {
-                            if (Guid.TryParse(idStr.Trim(), out Guid parsedId))
+                            Console.Write("Введите ID второго пользователя (GUID): ");
+                            var user2IdString = Console.ReadLine() ?? "";
+                            if (!Guid.TryParse(user2IdString, out var user2Id))
                             {
-                                participantGuids.Add(parsedId);
+                                Console.WriteLine("Некорректный ID пользователя.");
+                                return;
                             }
-                        }
 
-                        participantGuids = participantGuids.Where(id => id != _currentUserId).Distinct().ToList();
-                        participantGuids.Insert(0, _currentUserId); 
-
-                        foreach (var pId in participantGuids)
-                        {
-                            if (!await CheckUserExists(pId))
+                            // Дополнительная проверка: существует ли второй пользователь
+                            if (!await CheckUserExists(user2Id))
                             {
                                 Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine($"Участник с ID {pId} не существует. Создание чата отменено.");
+                                Console.WriteLine($"Пользователь с ID {user2Id} не существует.");
                                 Console.ResetColor();
                                 return;
                             }
-                        }
 
-                        if (participantGuids.Count < 2) // Для группового чата теперь минимум 2 участника (включая текущего)
+                            requestBody = JsonSerializer.Serialize(new { user1Id = _currentUserId, user2Id });
+                            response = await HttpClient.PostAsync($"{ChatServiceUrl}/api/chats/personal",
+                                new StringContent(requestBody, Encoding.UTF8, "application/json"));
+                            break;
+                        }
+                    case "2":
                         {
-                            Console.WriteLine(
-                                "Для группового чата требуется минимум 2 уникальных участника (включая вас).");
-                            return;
-                        }
+                            Console.Write("Введите название группы: ");
+                            string groupName = Console.ReadLine() ?? "";
 
-                        requestBody = JsonSerializer.Serialize(new
-                            { name = groupName, participantIds = participantGuids });
-                        response = await HttpClient.PostAsync($"{ChatServiceUrl}/api/chats/group",
-                            new StringContent(requestBody, Encoding.UTF8, "application/json"));
-                        break;
-                    }
+                            Console.Write("Введите ID участников через запятую (минимум 2 других пользователя): ");
+                            string participantIdsString = Console.ReadLine() ?? "";
+                            var participantGuids = new List<Guid>();
+
+                            foreach (var idStr in participantIdsString.Split(','))
+                            {
+                                if (Guid.TryParse(idStr.Trim(), out Guid parsedId))
+                                {
+                                    participantGuids.Add(parsedId);
+                                }
+                            }
+
+                            participantGuids = participantGuids.Where(id => id != _currentUserId).Distinct().ToList();
+                            participantGuids.Insert(0, _currentUserId);
+
+                            foreach (var pId in participantGuids)
+                            {
+                                if (!await CheckUserExists(pId))
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine($"Участник с ID {pId} не существует. Создание чата отменено.");
+                                    Console.ResetColor();
+                                    return;
+                                }
+                            }
+
+                            if (participantGuids.Count < 2)
+                            {
+                                Console.WriteLine(
+                                    "Для группового чата требуется минимум 2 уникальных участника (включая вас).");
+                                return;
+                            }
+
+                            requestBody = JsonSerializer.Serialize(new
+                                { name = groupName, participantIds = participantGuids });
+                            response = await HttpClient.PostAsync($"{ChatServiceUrl}/api/chats/group",
+                                new StringContent(requestBody, Encoding.UTF8, "application/json"));
+                            break;
+                        }
                     default:
                         Console.WriteLine("Неверный выбор типа чата.");
                         return;
@@ -447,6 +446,7 @@ namespace ChatClientConsole
 
             await LoadChatHistory();
             await ConnectToSignalR();
+
             if (_connection is not { State: HubConnectionState.Connected })
             {
                 Console.ForegroundColor = ConsoleColor.Red;
@@ -459,22 +459,33 @@ namespace ChatClientConsole
                 await _connection.InvokeAsync("JoinChatGroup", _currentChatId, _currentUserId);
             }
 
-            Console.WriteLine("Введите сообщение (или 'exit' для выхода из чата):");
+            Console.WriteLine("Введите сообщение (или 'menu' для действий, 'exit' для выхода из чата):");
 
-            string? messageContent;
+            string? input;
             do
             {
                 Console.Write("> ");
-                messageContent = Console.ReadLine();
+                input = Console.ReadLine();
 
-                if (messageContent?.ToLower() != "exit" && !string.IsNullOrWhiteSpace(messageContent))
+                if (string.IsNullOrWhiteSpace(input)) continue;
+
+                if (input.ToLower() == "exit")
+                {
+                    break;
+                }
+                else if (input.ToLower() == "menu")
+                {
+                    await ShowChatActionsMenu();
+                    Console.WriteLine("Введите сообщение (или 'menu' для действий, 'exit' для выхода из чата):");
+                }
+                else
                 {
                     if (_connection is { State: HubConnectionState.Connected })
                     {
                         try
                         {
                             await _connection.InvokeAsync("SendMessage", _currentChatId, _currentUserId,
-                                messageContent);
+                                input);
                         }
                         catch (Exception ex)
                         {
@@ -490,7 +501,7 @@ namespace ChatClientConsole
                         Console.ResetColor();
                     }
                 }
-            } while (messageContent?.ToLower() != "exit");
+            } while (true);
         }
 
         static async Task ConnectToSignalR()
@@ -500,15 +511,11 @@ namespace ChatClientConsole
                 .WithAutomaticReconnect()
                 .Build();
 
-            _connection.On<ChatMessage>("ReceiveMessage", async (message) => // Асинхронный лямбда
+            _connection.On<ChatMessage>("ReceiveMessage", (message) =>
             {
-                Console.WriteLine(
-                    $"\n[{message.Timestamp.ToLocalTime():HH:mm:ss}] {message.SenderId.ToString().Substring(0, 8)}: {message.Content}\n> ");
-
-                if (message.SenderId != _currentUserId)
-                {
-                    await MarkMessageAsRead(message.Id, message.ChatId, _currentUserId);
-                }
+                _currentChatMessages.TryAdd(message.Id, message);
+                DisplayMessage(message);
+                Console.Write("> ");
             });
 
             _connection.On<string>("ReceiveError", (errorMsg) =>
@@ -523,6 +530,59 @@ namespace ChatClientConsole
                 Console.ForegroundColor = ConsoleColor.Blue;
                 Console.WriteLine($"\n[ИНФО] {infoMsg}\n> ");
                 Console.ResetColor();
+            });
+
+            _connection.On<Guid, string, DateTimeOffset, bool>("MessageEdited", (messageId, newContent, timestamp, isEdited) =>
+            {
+                if (_currentChatMessages.TryGetValue(messageId, out var existingMessage))
+                {
+                    existingMessage.Content = newContent;
+                    existingMessage.Timestamp = timestamp; // Обновляем метку времени, т.к. хаб обновляет её
+                    existingMessage.IsEdited = isEdited;
+                    Console.WriteLine($"\n[ОБНОВЛЕНО] {existingMessage.SenderId.ToString().Substring(0, 8)}: {existingMessage.Content} (ред. {existingMessage.Timestamp.ToLocalTime():HH:mm:ss})\n> ");
+                }
+                else
+                {
+                    Console.WriteLine($"\n[ОБНОВЛЕНО] Сообщение ID {messageId} было отредактировано: {newContent}\n> ");
+                }
+            });
+
+            _connection.On<Guid, string, DateTimeOffset, bool>("MessageDeleted", (messageId, newContent, timestamp, isDeleted) =>
+            {
+                if (_currentChatMessages.TryGetValue(messageId, out var existingMessage))
+                {
+                    existingMessage.Content = newContent; // Например, "[Сообщение удалено]"
+                    existingMessage.Timestamp = timestamp;
+                    existingMessage.IsDeleted = isDeleted;
+                    Console.WriteLine($"\n[УДАЛЕНО] Сообщение {existingMessage.SenderId.ToString().Substring(0, 8)}: {existingMessage.Content}\n> ");
+                }
+                else
+                {
+                    Console.WriteLine($"\n[УДАЛЕНО] Сообщение ID {messageId} было удалено.\n> ");
+                }
+            });
+
+            _connection.On<Guid, bool>("UserStatusChanged", (userId, isOnline) =>
+            {
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                string status = isOnline ? "онлайн" : "оффлайн";
+                Console.WriteLine($"\n[СТАТУС] Пользователь {userId.ToString().Substring(0, 8)} теперь {status}\n> ");
+                Console.ResetColor();
+            });
+
+            _connection.On<Guid, Guid, List<Guid>>("MessagesRead", (readerId, chatId, messageIds) =>
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"\n[ПРОЧИТАНО] Пользователь {readerId.ToString().Substring(0, 8)} прочитал сообщения в чате {chatId}: {string.Join(", ", messageIds.Select(id => id.ToString().Substring(0, 8)))}\n> ");
+                Console.ResetColor();
+
+                foreach (var msgId in messageIds)
+                {
+                    if (_currentChatMessages.TryGetValue(msgId, out var msg))
+                    {
+                        msg.IsRead = true;
+                    }
+                }
             });
 
             _connection.Closed += async (error) =>
@@ -577,16 +637,19 @@ namespace ChatClientConsole
                     var messagesJson = await response.Content.ReadAsStringAsync();
                     var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesJson, JsonOptions);
 
+                    _currentChatMessages.Clear();
+
                     if (messages != null && messages.Any())
                     {
                         Console.WriteLine("--- История сообщений ---");
-                        foreach (var msg in messages)
+                        foreach (var msg in messages.OrderBy(m => m.Timestamp))
                         {
-                            Console.WriteLine(
-                                $"[{msg.Timestamp.ToLocalTime():HH:mm:ss}] {msg.SenderId.ToString().Substring(0, 8)}: {msg.Content}");
+                            _currentChatMessages.TryAdd(msg.Id, msg);
+                            DisplayMessage(msg);
                         }
-
                         Console.WriteLine("--- Конец истории ---");
+
+                        await MarkAllMessagesAsRead(_currentChatId, _currentUserId);
                     }
                     else
                     {
@@ -609,29 +672,225 @@ namespace ChatClientConsole
             }
         }
 
-        static async Task MarkMessageAsRead(Guid messageId, Guid chatId, Guid recipientId)
+        private static void DisplayMessage(ChatMessage msg)
+        {
+            string status = msg.IsEdited ? " (ред.)" : msg.IsDeleted ? " (уд.)" : "";
+            string readStatus = msg.IsRead ? " (прочитано)" : "";
+            string senderPrefix = msg.SenderId == _currentUserId ? "[Я]" : $"[{msg.SenderId.ToString().Substring(0, 8)}]";
+            Console.WriteLine(
+                $"{senderPrefix} [{msg.Timestamp.ToLocalTime():HH:mm:ss}] {msg.Content}{status}{readStatus}");
+        }
+
+        private static async Task ShowChatActionsMenu()
+        {
+            Console.WriteLine("\n--- Действия в чате ---");
+            Console.WriteLine("1. Редактировать сообщение");
+            Console.WriteLine("2. Удалить сообщение");
+            Console.WriteLine("3. Пометить все сообщения прочитанными");
+            Console.WriteLine("4. Проверить онлайн статус пользователя");
+            Console.WriteLine("0. Назад в чат");
+            Console.Write("Ваш выбор: ");
+
+            var choice = Console.ReadLine();
+            switch (choice)
+            {
+                case "1":
+                    await EditChatMessage();
+                    break;
+                case "2":
+                    await DeleteChatMessage();
+                    break;
+                case "3":
+                    await MarkAllMessagesAsRead(_currentChatId, _currentUserId);
+                    break;
+                case "4":
+                    await CheckUserOnlineStatus();
+                    break;
+                case "0":
+                    Console.WriteLine("Возврат в чат.");
+                    break;
+                default:
+                    Console.WriteLine("Неверный выбор.");
+                    break;
+            }
+        }
+
+        private static async Task EditChatMessage()
+        {
+            Console.Write("Введите ID сообщения для редактирования: ");
+            var messageIdString = Console.ReadLine();
+            if (!Guid.TryParse(messageIdString, out var messageId))
+            {
+                Console.WriteLine("Некорректный ID сообщения.");
+                return;
+            }
+
+            if (!_currentChatMessages.ContainsKey(messageId))
+            {
+                Console.WriteLine("Сообщение с таким ID не найдено в текущем чате.");
+                return;
+            }
+
+            Console.Write("Введите новый текст сообщения: ");
+            var newContent = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(newContent))
+            {
+                Console.WriteLine("Содержимое сообщения не может быть пустым.");
+                return;
+            }
+
+            if (_connection is { State: HubConnectionState.Connected })
+            {
+                try
+                {
+                    await _connection.InvokeAsync("EditMessage", _currentChatId, messageId, newContent, _currentUserId);
+                    Console.WriteLine($"Запрос на редактирование сообщения {messageId} отправлен.");
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Ошибка при отправке запроса на редактирование: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("SignalR соединение не активно. Редактирование невозможно.");
+                Console.ResetColor();
+            }
+        }
+
+        private static async Task DeleteChatMessage()
+        {
+            Console.Write("Введите ID сообщения для удаления: ");
+            var messageIdString = Console.ReadLine();
+            if (!Guid.TryParse(messageIdString, out var messageId))
+            {
+                Console.WriteLine("Некорректный ID сообщения.");
+                return;
+            }
+
+            if (!_currentChatMessages.ContainsKey(messageId))
+            {
+                Console.WriteLine("Сообщение с таким ID не найдено в текущем чате.");
+                return;
+            }
+            
+            Console.Write($"Вы уверены, что хотите удалить сообщение {messageId.ToString().Substring(0, 8)}? (да/нет): ");
+            var confirmation = Console.ReadLine()?.ToLower();
+            if (confirmation != "да")
+            {
+                Console.WriteLine("Удаление отменено.");
+                return;
+            }
+
+            if (_connection is { State: HubConnectionState.Connected })
+            {
+                try
+                {
+                    await _connection.InvokeAsync("DeleteMessage", _currentChatId, messageId, _currentUserId);
+                    Console.WriteLine($"Запрос на удаление сообщения {messageId} отправлен.");
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Ошибка при отправке запроса на удаление: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("SignalR соединение не активно. Удаление невозможно.");
+                Console.ResetColor();
+            }
+        }
+
+        private static async Task MarkAllMessagesAsRead(Guid chatId, Guid userId)
         {
             try
             {
-                var markAsReadDto = new { MessageId = messageId, ChatId = chatId, RecipientId = recipientId, ReadTimestamp = DateTimeOffset.UtcNow };
-                var content = new StringContent(JsonSerializer.Serialize(markAsReadDto), Encoding.UTF8, "application/json");
-                var response = await HttpClient.PostAsync($"{NotificationServiceUrl}/api/notifications/markread", content);
+                // Находим все непрочитанные сообщения, отправленные НЕ текущим пользователем
+                var unreadMessageIds = _currentChatMessages.Values
+                    .Where(m => m.ChatId == chatId && m.SenderId != userId && !m.IsRead)
+                    .Select(m => m.Id)
+                    .ToList();
 
-                if (!response.IsSuccessStatusCode)
+                if (!unreadMessageIds.Any())
+                {
+                    Console.WriteLine("Нет новых непрочитанных сообщений для пометки.");
+                    return;
+                }
+
+                // Отправляем HTTP POST запрос в MessageService
+                var requestBody = JsonSerializer.Serialize(new { chatId = chatId, readerId = userId, messageIds = unreadMessageIds });
+                var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+
+                var response = await HttpClient.PostAsync($"{MessageServiceHttpUrl}/api/messages/markread", content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("Сообщения помечены как прочитанные.");
+                    // Локально обновим статус прочитанных сообщений
+                    foreach (var msgId in unreadMessageIds)
+                    {
+                        if (_currentChatMessages.TryGetValue(msgId, out var msg))
+                        {
+                            msg.IsRead = true;
+                        }
+                    }
+                    // В реальном UI здесь можно было бы перерисовать сообщения
+                }
+                else
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine($"\nОшибка при отметке сообщения {messageId} как прочитанного: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}\n> ");
+                    Console.WriteLine($"Ошибка при пометке сообщений прочитанными: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}");
                     Console.ResetColor();
                 }
             }
             catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"\nИсключение при отметке сообщения как прочитанного: {ex.Message}\n> ");
+                Console.WriteLine($"Исключение при пометке сообщений прочитанными: {ex.Message}");
                 Console.ResetColor();
             }
         }
-        
+
+        private static async Task CheckUserOnlineStatus()
+        {
+            Console.Write("Введите ID пользователя для проверки статуса: ");
+            var userIdString = Console.ReadLine();
+            if (!Guid.TryParse(userIdString, out var targetUserId))
+            {
+                Console.WriteLine("Некорректный ID пользователя.");
+                return;
+            }
+
+            if (_connection is { State: HubConnectionState.Connected })
+            {
+                try
+                {
+                    var isOnline = await _connection.InvokeAsync<bool>("IsUserOnline", targetUserId);
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"\nПользователь {targetUserId.ToString().Substring(0, 8)}: {(isOnline ? "ОНЛАЙН" : "ОФФЛАЙН")}\n> ");
+                    Console.ResetColor();
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Ошибка при проверке статуса пользователя: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("SignalR соединение не активно. Невозможно проверить статус.");
+                Console.ResetColor();
+            }
+        }
+
         private static async Task<bool> CheckUserExists(Guid userId)
         {
             try
@@ -672,6 +931,9 @@ namespace ChatClientConsole
             public Guid SenderId { get; set; }
             public string Content { get; set; } = null!;
             public DateTimeOffset Timestamp { get; set; }
+            public bool IsEdited { get; set; }
+            public bool IsDeleted { get; set; }
+            public bool IsRead { get; set; }
         }
     }
 }

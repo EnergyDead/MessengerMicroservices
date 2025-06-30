@@ -1,5 +1,4 @@
 using MessageService.Constants;
-using MessageService.Data;
 using MessageService.DTOs;
 using MessageService.Models;
 using MessageService.Services;
@@ -12,17 +11,11 @@ namespace MessageService.Controllers;
 [Route("api/[controller]")]
 public class MessagesController : ControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly HttpClient _chatHttpClient;
-    private readonly IUserPresenceService _presenceService;
+    private readonly IMessageRepository _messageRepository;
 
-    public MessagesController(AppDbContext db,
-        IUserPresenceService presenceService,
-        IHttpClientFactory httpClientFactory)
+    public MessagesController(IMessageRepository messageService)
     {
-        _db = db ?? throw new ArgumentNullException(nameof(db));
-        _presenceService = presenceService ?? throw new ArgumentNullException(nameof(presenceService));
-        _chatHttpClient = httpClientFactory.CreateClient(ServiceConstants.ChatServiceHttpClientName);
+        _messageRepository = messageService ?? throw new ArgumentNullException(nameof(messageService));
     }
 
     /// <summary>
@@ -31,53 +24,64 @@ public class MessagesController : ControllerBase
     [HttpGet("chat/{chatId:guid}")]
     public async Task<ActionResult<IEnumerable<MessageResponse>>> GetChatMessages(Guid chatId)
     {
-        // todo добавить проверку что пользователь находится в чате
+        var messages = await _messageRepository.GetMessagesByChatIdAsync(chatId);
 
-        var chatExists = await CheckChatExists(chatId);
-        if (!chatExists)
+        var responseMessages = messages.Select(ToMessageResponse).ToList();
+        return Ok(responseMessages);
+    }
+
+    /// <summary>
+    /// Редактирует существующее сообщение.
+    /// </summary>
+    [HttpPut("edit")]
+    public async Task<ActionResult> EditMessage([FromBody] EditMessageRequest request)
+    {
+        var (success, errorMessage, updatedMessage) = await _messageRepository.EditMessageAsync(request);
+
+        if (success) return NoContent();
+
+        if (errorMessage.Contains("not found"))
         {
-            return NotFound("Chat not found.");
+            return NotFound(errorMessage);
         }
 
-        var messages = await _db.Messages
-            .Where(m => m.ChatId == chatId)
-            .OrderBy(m => m.Timestamp) // Сортируем по времени, чтобы получить в хронологическом порядке
-            .Select(m => ToMessageResponse(m)) // Преобразуем в DTO
-            .ToListAsync();
+        if (errorMessage.Contains("Only the sender"))
+        {
+            return Forbid(errorMessage);
+        }
 
-        return Ok(messages);
+        return BadRequest(errorMessage);
     }
-
+    
     /// <summary>
-    /// Возвращает сообщения, отправленные после указанной временной метки.
-    /// Эндпоинт для NotificationService.
+    /// Удаляет (помечает как удаленное) существующее сообщение.
     /// </summary>
-    [HttpGet("messages/since/{timestampMs:long}")]
-    public async Task<ActionResult<IEnumerable<Message>>> GetMessagesSince(long timestampMs)
+    [HttpDelete("{messageId:guid}")]
+    public async Task<ActionResult> DeleteMessage(Guid messageId, [FromQuery] Guid deleterId) // deleterId из Query-параметра
     {
-        var dateTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs);
-        var messages = await _db.Messages
-            .Where(m => m.Timestamp > dateTimeOffset)
-            .OrderBy(m => m.Timestamp)
-            .ToListAsync();
-        return Ok(messages);
-    }
+        if (deleterId == Guid.Empty)
+        {
+            return BadRequest("Deleter ID is required.");
+        }
 
-    /// <summary>
-    /// Проверяет, находится ли пользователь онлайн.
-    /// Эндпоинт для NotificationService.
-    /// </summary>
-    [HttpGet("users/online/{userId:guid}")]
-    public async Task<ActionResult<bool>> IsUserOnline(Guid userId)
-    {
-        var isOnline = await _presenceService.IsUserOnline(userId);
-        return Ok(isOnline);
-    }
+        var (success, errorMessage) = await _messageRepository.DeleteMessageAsync(messageId, deleterId);
 
-    private async Task<bool> CheckChatExists(Guid chatId)
-    {
-        var response = await _chatHttpClient.GetAsync($"{ServiceConstants.ChatServiceBaseApiPath}/{chatId}");
-        return response.IsSuccessStatusCode;
+        if (success)
+        {
+            return NoContent();
+        }
+
+        if (errorMessage.Contains("not found"))
+        {
+            return NotFound(errorMessage);
+        }
+
+        if (errorMessage.Contains("Only the sender"))
+        {
+            return Forbid(errorMessage);
+        }
+
+        return BadRequest(errorMessage);
     }
 
     private static MessageResponse ToMessageResponse(Message message)

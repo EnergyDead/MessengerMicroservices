@@ -3,6 +3,7 @@ using MessageService.Data;
 using MessageService.Hubs;
 using MessageService.Services;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,11 +17,21 @@ builder.Services.AddHttpClient(ServiceConstants.ChatServiceHttpClientName, clien
                                  ?? throw new InvalidOperationException("ChatService:BaseUrl not configured in app settings."));
 });
 
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var redisConnectionString = configuration.GetConnectionString("RedisConnection") 
+                                ?? throw new InvalidOperationException("RedisConnection string not found.");
+    return ConnectionMultiplexer.Connect(redisConnectionString);
+});
+
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
+
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddScoped<IUserPresenceService, InMemoryUserPresenceService>();
+builder.Services.AddScoped<IUserPresenceService, UserPresenceService>();
 
 var app = builder.Build();
 

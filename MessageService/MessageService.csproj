@@ -14,6 +14,7 @@
         </PackageReference>
         <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.17" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.17" />
+        <PackageReference Include="StackExchange.Redis" Version="2.8.50-g3f6a898e04" />
         <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.4" />
     </ItemGroup>
 
