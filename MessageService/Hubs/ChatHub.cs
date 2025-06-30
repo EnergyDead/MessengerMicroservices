@@ -28,7 +28,7 @@ public class ChatHub : Hub
     /// <summary>
     /// Отправляет сообщение в указанный чат.
     /// </summary>
-    public async Task SendMessage(SendMessageRequest request)
+    public async Task<MessageResponse?> SendMessage(SendMessageRequest request)
     {
         var senderId = GetCurrentUserId(); // ✨ Получаем senderId из токена
         
@@ -57,6 +57,15 @@ public class ChatHub : Hub
             // Отправляем ошибку только отправителю
             await Clients.Caller.SendAsync("SendMessageError", errorMessage);
         }
+
+        return new MessageResponse
+        {
+            Id = message.Id,
+            ChatId = message.ChatId,
+            SenderId = message.SenderId,
+            Content = message.Content,
+            Timestamp = message.Timestamp
+        };
     }
 
     /// <summary>

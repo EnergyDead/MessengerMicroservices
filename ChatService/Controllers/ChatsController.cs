@@ -143,7 +143,7 @@ public class ChatsController : ControllerBase
         var chatResponse = new ChatResponse
         {
             Id = chat.Id,
-            Type = chat.Type.ToString(),
+            Type = chat.Type,
             Name = chat.Name,
             ParticipantIds = chat.Participants.Select(p => p.UserId).ToList()
         };
@@ -196,7 +196,7 @@ public class ChatsController : ControllerBase
         return new ChatResponse
         {
             Id = chat.Id,
-            Type = chat.Type.ToString(),
+            Type = chat.Type,
             Name = chat.Name,
             ParticipantIds = chat.Participants.Select(p => p.UserId).ToList()
         };

@@ -1,27 +1,46 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using UserService.Data;
 using UserService.DTOs;
 using UserService.Models;
+using UserService.Services;
 using UserService.Utils;
 
 namespace UserService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class UsersController(AppDbContext _db, IConfiguration _configuration) : ControllerBase
+public class UsersController(AppDbContext _db, IConfiguration _configuration, ITokenGenerator generator) : ControllerBase
 {
-    [HttpGet("{id:guid}")]
-    public async Task<ActionResult<User>> Get(Guid id)
+    [HttpGet("by-email/{email}")]
+    [Authorize]
+    public async Task<ActionResult<UserResponse>> GetUserByEmail(string email)
     {
-        var user = await _db.Users.FindAsync(id);
-        return user is null ? NotFound() : Ok(user);
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Email == email);
+        if (user == null)
+        {
+            return NotFound("User with this email not found.");
+        }
+
+        return Ok(new UserResponse { Id = user.Id, Username = user.Username, Email = user.Email });
     }
-    
+
+    [HttpGet("{userId:guid}")]
+    [Authorize]
+    public async Task<ActionResult<UserResponse>> GetUserById(Guid userId)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId);
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        return Ok(new UserResponse { Id = user.Id, Username = user.Username, Email = user.Email });
+    }
+
     /// <summary>
     /// Регистрирует нового пользователя.
     /// </summary>
@@ -43,15 +62,22 @@ public class UsersController(AppDbContext _db, IConfiguration _configuration) : 
             Id = Guid.NewGuid(),
             Username = request.Username,
             Email = request.Email,
-            PasswordHash = PasswordHasher.HashPassword(request.Password), // Хешируем пароль
+            PasswordHash = PasswordHasher.HashPassword(request.Password),
             CreatedAt = DateTimeOffset.UtcNow
         };
 
         _db.Users.Add(newUser);
         await _db.SaveChangesAsync();
 
-        // После регистрации сразу выдаем токен
-        var token = GenerateJwtToken(newUser);
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, newUser.Id.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(ClaimTypes.NameIdentifier, newUser.Id.ToString()),
+            new(ClaimTypes.Name, newUser.Username),
+            new(ClaimTypes.Email, newUser.Email)
+        };
+        var token = generator.GenerateToken(claims); 
 
         return Ok(new AuthResponse
         {
@@ -59,10 +85,10 @@ public class UsersController(AppDbContext _db, IConfiguration _configuration) : 
             Username = newUser.Username,
             Email = newUser.Email,
             Token = token,
-            Expires = DateTimeOffset.UtcNow.AddMinutes(GetJwtTokenLifetime()) // Срок действия токена
+            Expires = DateTimeOffset.UtcNow.AddMinutes(GetJwtTokenLifetime())
         });
     }
-    
+
     /// <summary>
     /// Аутентифицирует пользователя и выдает JWT-токен.
     /// </summary>
@@ -80,8 +106,16 @@ public class UsersController(AppDbContext _db, IConfiguration _configuration) : 
         {
             return Unauthorized("Неверный Email или пароль.");
         }
-
-        var token = GenerateJwtToken(user);
+        
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email)
+        };
+        var token = generator.GenerateToken(claims);
 
         return Ok(new AuthResponse
         {
@@ -91,39 +125,6 @@ public class UsersController(AppDbContext _db, IConfiguration _configuration) : 
             Token = token,
             Expires = DateTimeOffset.UtcNow.AddMinutes(GetJwtTokenLifetime())
         });
-    }
-    
-    /// <summary>
-    /// Генерирует JWT-токен для пользователя.
-    /// </summary>
-    private string GenerateJwtToken(User user)
-    {
-        var jwtSecret = _configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured.");
-        var jwtIssuer = _configuration["Jwt:Issuer"] ?? "your-issuer";
-        var jwtAudience = _configuration["Jwt:Audience"] ?? "your-audience";
-
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-        
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Email, user.Email)
-        };
-
-        var tokenLifetimeMinutes = GetJwtTokenLifetime();
-
-        var token = new JwtSecurityToken(
-            issuer: jwtIssuer,
-            audience: jwtAudience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(tokenLifetimeMinutes),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private double GetJwtTokenLifetime()
