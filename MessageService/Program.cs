@@ -17,13 +17,14 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHttpClient(ServiceConstants.ChatServiceHttpClientName, client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ChatService:BaseUrl"]
-                                 ?? throw new InvalidOperationException("ChatService:BaseUrl not configured in app settings."));
+                                 ?? throw new InvalidOperationException(
+                                     "ChatService:BaseUrl not configured in app settings."));
 });
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
-    var redisConnectionString = configuration.GetConnectionString("RedisConnection") 
+    var redisConnectionString = configuration.GetConnectionString("RedisConnection")
                                 ?? throw new InvalidOperationException("RedisConnection string not found.");
     return ConnectionMultiplexer.Connect(redisConnectionString);
 });
@@ -42,7 +43,8 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"] ?? string.Empty)),
+        IssuerSigningKey =
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"] ?? string.Empty)),
         ClockSkew = TimeSpan.Zero
     };
 });

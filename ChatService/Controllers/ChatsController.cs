@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using ChatService.Constants;
 using ChatService.Data;
 using ChatService.DTOs;
 using ChatService.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +11,7 @@ namespace ChatService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class ChatsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -27,40 +30,43 @@ public class ChatsController : ControllerBase
     [HttpPost("personal")]
     public async Task<ActionResult<ChatResponse>> CreatePersonalChat(CreatePersonalChatRequest request)
     {
-        var user1Exists = await CheckUserExists(request.User1Id);
-        var user2Exists = await CheckUserExists(request.User2Id);
-        if (!user1Exists || !user2Exists)
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var currentUserId))
         {
-            return BadRequest("One or both users do not exist.");
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
         }
 
-        // Проверяем, существует ли уже личный чат между этими двумя пользователями
+        if (currentUserId != request.User1Id && currentUserId != request.User2Id)
+        {
+            return Forbid("Вы должны быть одним из участников личного чата для его создания.");
+        }
+
         var existingChat = await _db.Chats
             .Where(c => c.Type == ChatType.Personal)
-            .Where(c => c.Participants.Any(p => p.UserId == request.User1Id) &&
+            .Where(c => c.Participants.Count == 2 &&
+                        c.Participants.Any(p => p.UserId == request.User1Id) &&
                         c.Participants.Any(p => p.UserId == request.User2Id))
             .FirstOrDefaultAsync();
 
         if (existingChat != null)
         {
-            return Conflict("Personal chat between these users already exists.");
+            return Conflict($"Личный чат между {request.User1Id} и {request.User2Id} уже существует.");
         }
 
-        var chat = new Chat
+        var newChat = new Chat
         {
             Id = Guid.NewGuid(),
             Type = ChatType.Personal,
-            Participants = new List<UserChat>
-            {
-                new UserChat { UserId = request.User1Id },
-                new UserChat { UserId = request.User2Id }
-            }
+            Name = null
         };
 
-        _db.Chats.Add(chat);
+        newChat.Participants.Add(new UserChat { UserId = request.User1Id });
+        newChat.Participants.Add(new UserChat { UserId = request.User2Id });
+
+        _db.Chats.Add(newChat);
         await _db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetChat), new { chatId = chat.Id }, ToChatResponse(chat));
+        return CreatedAtAction(nameof(GetChat), new { chatId = newChat.Id }, ToChatResponse(newChat));
     }
 
     /// <summary>
@@ -69,42 +75,43 @@ public class ChatsController : ControllerBase
     [HttpPost("group")]
     public async Task<ActionResult<ChatResponse>> CreateGroupChat(CreateGroupChatRequest request)
     {
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var currentUserId))
+        {
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest("Group chat must have a name.");
+            return BadRequest("Имя группового чата обязательно.");
         }
 
-        if (request.ParticipantIds.Count < 3)
+        if (request.ParticipantIds.Count == 0)
         {
-            return BadRequest("A group chat must have at least 3 participants.");
+            return BadRequest("В групповом чате должны быть участники.");
         }
 
-        var distinctParticipantIds = request.ParticipantIds.Distinct().ToList();
-        if (distinctParticipantIds.Count != request.ParticipantIds.Count)
+        if (!request.ParticipantIds.Contains(currentUserId))
         {
-            return BadRequest("Participant list contains duplicate user IDs.");
+            return Forbid("Вы должны быть участником создаваемого группового чата.");
         }
 
-        foreach (var userId in request.ParticipantIds)
-        {
-            if (!await CheckUserExists(userId))
-            {
-                return BadRequest($"User with ID {userId} does not exist.");
-            }
-        }
-
-        var chat = new Chat
+        var newChat = new Chat
         {
             Id = Guid.NewGuid(),
             Type = ChatType.Group,
-            Name = request.Name,
-            Participants = request.ParticipantIds.Select(id => new UserChat { UserId = id }).ToList()
+            Name = request.Name
         };
 
-        _db.Chats.Add(chat);
+        foreach (var userId in request.ParticipantIds.Distinct())
+        {
+            newChat.Participants.Add(new UserChat { UserId = userId });
+        }
+
+        _db.Chats.Add(newChat);
         await _db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetChat), new { chatId = chat.Id }, ToChatResponse(chat));
+        return CreatedAtAction(nameof(GetChat), new { chatId = newChat.Id }, ToChatResponse(newChat));
     }
 
     /// <summary>
@@ -113,24 +120,49 @@ public class ChatsController : ControllerBase
     [HttpGet("{chatId:guid}")]
     public async Task<ActionResult<ChatResponse>> GetChat(Guid chatId)
     {
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var currentUserId))
+        {
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
+        }
+
         var chat = await _db.Chats
             .Include(c => c.Participants)
             .FirstOrDefaultAsync(c => c.Id == chatId);
 
         if (chat == null)
         {
-            return NotFound();
+            return NotFound("Чат не найден.");
         }
 
-        return Ok(ToChatResponse(chat));
+        if (chat.Participants.All(cp => cp.UserId != currentUserId))
+        {
+            return Forbid("У вас нет доступа к этому чату.");
+        }
+
+        var chatResponse = new ChatResponse
+        {
+            Id = chat.Id,
+            Type = chat.Type.ToString(),
+            Name = chat.Name,
+            ParticipantIds = chat.Participants.Select(p => p.UserId).ToList()
+        };
+
+        return Ok(chatResponse);
     }
 
     /// <summary>
     /// Получает все чаты, в которых участвует заданный пользователь.
     /// </summary>
-    [HttpGet("user/{userId:guid}")]
-    public async Task<ActionResult<IEnumerable<ChatResponse>>> GetUserChats(Guid userId)
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<ChatResponse>>> GetUserChats()
     {
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var userId))
+        {
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
+        }
+
         if (!await CheckUserExists(userId))
         {
             return NotFound($"User with ID {userId} does not exist.");
