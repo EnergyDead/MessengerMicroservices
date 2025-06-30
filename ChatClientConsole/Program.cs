@@ -549,7 +549,7 @@ public class Program
         await LoadChatHistory(chatHistory);
 
         var hubConnection = await ConnectToSignalR(chatHistory);
-
+        await hubConnection.InvokeAsync("JoinChatGroup", _currentChatId, _currentUser!.UserId);
         var inputTask = Task.Run(async () =>
         {
             while (_currentChatId != Guid.Empty)
@@ -617,17 +617,17 @@ public class Program
             }
         });
 
-        hubConnection.On<Guid, string>("MessageEdited", (messageId, newContent) =>
+        hubConnection.On<MessageResponse>("MessageEdited", (message) =>
         {
-            if (chatHistory.FirstOrDefault(m => m.Id == messageId)?.ChatId == _currentChatId)
+            if (chatHistory.FirstOrDefault(m => m.Id == message.Id)?.ChatId == _currentChatId)
             {
-                var msg = chatHistory.FirstOrDefault(m => m.Id == messageId);
+                var msg = chatHistory.FirstOrDefault(m => m.Id == message.Id);
                 if (msg != null)
                 {
-                    msg.Content = newContent;
+                    msg.Content = message.Content;
                     msg.IsEdited = true;
                     Console.ForegroundColor = ConsoleColor.Blue;
-                    Console.WriteLine($"\n[Уведомление]: Сообщение от {msg.SenderUsername} изменено: \"{newContent}\"");
+                    Console.WriteLine($"\n[Уведомление]: Сообщение от {msg.SenderUsername} изменено: \"{message.Content}\"");
                     Console.ResetColor();
                 }
             }
