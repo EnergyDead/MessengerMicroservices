@@ -1,3 +1,4 @@
+using MessageService.Constants;
 using MessageService.Data;
 using MessageService.Hubs;
 using MessageService.Services;
@@ -8,6 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
+
+builder.Services.AddHttpClient(ServiceConstants.ChatServiceHttpClientName, client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["ChatService:BaseUrl"]
+                                 ?? throw new InvalidOperationException("ChatService:BaseUrl not configured in app settings."));
+});
 
 builder.Services.AddControllers();
 builder.Services.AddSignalR();

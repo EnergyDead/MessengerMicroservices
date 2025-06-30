@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using NotificationService.Constants;
 using NotificationService.Data;
 using NotificationService.DTOs;
 
@@ -19,16 +20,15 @@ public class MessagePollingService : IMessagePollingService
 
     public async Task<List<MessageDto>> GetUnprocessedMessagesAsync(DateTimeOffset lastCheckedTimestamp)
     {
-        var httpClient = _httpClientFactory.CreateClient("MessageServiceApi");
-        var response =
-            await httpClient.GetAsync($"/api/Messages/messages/since/{lastCheckedTimestamp.ToUnixTimeMilliseconds()}");
+        var httpClient = _httpClientFactory.CreateClient(ServiceConstants.MessageServiceHttpClientName);
+        var response = await httpClient.GetAsync(
+            $"{ServiceConstants.MessageServiceHttpClientName}{ServiceConstants.MessageServiceMessagesSincePath}{lastCheckedTimestamp.ToUnixTimeMilliseconds()}");
 
         if (!response.IsSuccessStatusCode) return [];
         var json = await response.Content.ReadAsStringAsync();
         var messages = JsonSerializer.Deserialize<List<MessageDto>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return messages ?? [];
-
     }
 
     public async Task UpdateMessageReadStatusAsync(Guid messageId, Guid recipientId, DateTimeOffset readTimestamp)
@@ -44,10 +44,9 @@ public class MessagePollingService : IMessagePollingService
 
     public async Task<bool> IsUserOnlineAsync(Guid userId)
     {
-        var httpClient = _httpClientFactory.CreateClient("MessageServiceApi");
-        var response =
-            await httpClient.GetAsync(
-                $"/api/Messages/users/online/{userId}"); // MessageService должен предоставить такой эндпоинт
+        var httpClient = _httpClientFactory.CreateClient(ServiceConstants.MessageServiceHttpClientName);
+        var response = await httpClient.GetAsync(
+            $"{ServiceConstants.MessageServiceBaseApiPath}{ServiceConstants.MessageServiceUsersOnlinePath}{userId}");
 
         if (response.IsSuccessStatusCode)
         {
@@ -60,19 +59,13 @@ public class MessagePollingService : IMessagePollingService
 
     public async Task<List<Guid>> GetChatParticipantsAsync(Guid chatId)
     {
-        var httpClient =
-            _httpClientFactory
-                .CreateClient(
-                    "UserServiceApi");
-        var response =
-            await httpClient.GetAsync(
-                $"/api/chats/{chatId}");
+        var httpClient = _httpClientFactory.CreateClient(ServiceConstants.UserServiceHttpClientName);
+        var response = await httpClient.GetAsync($"{ServiceConstants.ChatServiceBaseApiPath}/{chatId}");
 
         if (!response.IsSuccessStatusCode) return [];
         var json = await response.Content.ReadAsStringAsync();
         var chatInfo = JsonSerializer.Deserialize<ChatInfoResponse>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return chatInfo?.ParticipantIds ?? [];
-
     }
 }

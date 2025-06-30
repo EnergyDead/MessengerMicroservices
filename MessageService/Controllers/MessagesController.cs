@@ -1,3 +1,4 @@
+using MessageService.Constants;
 using MessageService.Data;
 using MessageService.DTOs;
 using MessageService.Models;
@@ -12,15 +13,16 @@ namespace MessageService.Controllers;
 public class MessagesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly HttpClient _httpClient;
-    private const string ChatServiceUrl = "http://localhost:5000"; // todo: вынести в настройки
+    private readonly HttpClient _chatHttpClient;
     private readonly IUserPresenceService _presenceService;
 
-    public MessagesController(AppDbContext db, IUserPresenceService presenceService)
+    public MessagesController(AppDbContext db,
+        IUserPresenceService presenceService,
+        IHttpClientFactory httpClientFactory)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _presenceService = presenceService ?? throw new ArgumentNullException(nameof(presenceService));
-        _httpClient = new HttpClient();
+        _chatHttpClient = httpClientFactory.CreateClient(ServiceConstants.ChatServiceHttpClientName);
     }
 
     /// <summary>
@@ -45,7 +47,7 @@ public class MessagesController : ControllerBase
 
         return Ok(messages);
     }
-    
+
     /// <summary>
     /// Возвращает сообщения, отправленные после указанной временной метки.
     /// Эндпоинт для NotificationService.
@@ -60,7 +62,7 @@ public class MessagesController : ControllerBase
             .ToListAsync();
         return Ok(messages);
     }
-    
+
     /// <summary>
     /// Проверяет, находится ли пользователь онлайн.
     /// Эндпоинт для NotificationService.
@@ -74,7 +76,7 @@ public class MessagesController : ControllerBase
 
     private async Task<bool> CheckChatExists(Guid chatId)
     {
-        var response = await _httpClient.GetAsync($"{ChatServiceUrl}/api/chats/{chatId}");
+        var response = await _chatHttpClient.GetAsync($"{ServiceConstants.ChatServiceBaseApiPath}/{chatId}");
         return response.IsSuccessStatusCode;
     }
 

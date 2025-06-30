@@ -1,3 +1,4 @@
+using ChatService.Constants;
 using ChatService.Data;
 using ChatService.DTOs;
 using ChatService.Models;
@@ -11,14 +12,13 @@ namespace ChatService.Controllers;
 public class ChatsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly HttpClient _httpClient;
+    private readonly HttpClient _userHttpClient;
 
-    private const string UserServiceUrl = "http://localhost:5267"; // todo: вынести в настройки
-
-    public ChatsController(AppDbContext db)
+    public ChatsController(AppDbContext db,
+        IHttpClientFactory httpClientFactory)
     {
         _db = db;
-        _httpClient = new HttpClient();
+        _userHttpClient = httpClientFactory.CreateClient(ServiceConstants.UserServiceHttpClientName);
     }
 
     /// <summary>
@@ -124,7 +124,7 @@ public class ChatsController : ControllerBase
 
         return Ok(ToChatResponse(chat));
     }
-    
+
     /// <summary>
     /// Получает все чаты, в которых участвует заданный пользователь.
     /// </summary>
@@ -154,10 +154,8 @@ public class ChatsController : ControllerBase
     /// </summary>
     private async Task<bool> CheckUserExists(Guid userId)
     {
-        // Отправляем GET-запрос к UserService
-        var response = await _httpClient.GetAsync($"{UserServiceUrl}/api/users/{userId}");
+        var response = await _userHttpClient.GetAsync($"{ServiceConstants.UserServiceBaseApiPath}/{userId}");
 
-        // Проверяем, успешен ли запрос (статус 2xx)
         return response.IsSuccessStatusCode;
     }
 

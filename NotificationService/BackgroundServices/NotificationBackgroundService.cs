@@ -29,7 +29,7 @@ public class NotificationBackgroundService : BackgroundService
             {
                 await DoWork(stoppingToken);
             }
-            catch (Exception )
+            catch (Exception)
             {
             }
 

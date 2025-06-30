@@ -7,20 +7,21 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace MessageService.Hubs;
 
-public class ChatHub: Hub
+public class ChatHub : Hub
 {
     private readonly AppDbContext _db;
-    private readonly HttpClient _httpClient;
+    private readonly HttpClient _chatHttpClient;
     private readonly IUserPresenceService _presenceService;
-    private const string ChatServiceUrl = "http://localhost:5000"; // todo: вынести в настройки
 
-    public ChatHub(AppDbContext db, IUserPresenceService presenceService)
+    public ChatHub(AppDbContext db,
+        IUserPresenceService presenceService,
+        IHttpClientFactory httpClientFactory)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _presenceService = presenceService ?? throw new ArgumentNullException(nameof(presenceService));
-        _httpClient = new HttpClient();
+        _chatHttpClient = httpClientFactory.CreateClient("ChatServiceApi");
     }
-    
+
     /// <summary>
     /// Отправляет сообщение в указанный чат.
     /// </summary>
@@ -67,7 +68,7 @@ public class ChatHub: Hub
 
         await base.OnConnectedAsync();
     }
-    
+
     /// <summary>
     /// Метод, который клиент должен вызвать, чтобы присоединиться к группе чата.
     /// Это необходимо, чтобы получать сообщения для этого чата.
@@ -80,42 +81,44 @@ public class ChatHub: Hub
             await Clients.Caller.SendAsync("ReceiveError", "You are not authorized to join this chat group.");
             return;
         }
-        
+
         await _presenceService.UserConnected(userId, Context.ConnectionId);
 
         await Groups.AddToGroupAsync(Context.ConnectionId, chatId.ToString());
         await Clients.Caller.SendAsync("ReceiveInfo", $"Joined chat group: {chatId}");
         await Clients.Group(chatId.ToString()).SendAsync("UserStatusChanged", userId, true);
     }
-    
+
     public async Task LeaveChatGroup(Guid chatId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId.ToString());
         await Clients.Caller.SendAsync("ReceiveInfo", $"Left chat group: {chatId}");
     }
-    
+
     public async Task<bool> IsUserOnline(Guid userId)
     {
         return await _presenceService.IsUserOnline(userId);
     }
-    
+
     private async Task<bool> CheckChatExists(Guid chatId)
     {
-        var response = await _httpClient.GetAsync($"{ChatServiceUrl}/api/chats/{chatId}");
+        var response = await _chatHttpClient.GetAsync($"/api/chats/{chatId}");
         return response.IsSuccessStatusCode;
     }
+
     private async Task<bool> CheckUserIsParticipant(Guid chatId, Guid userId)
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{ChatServiceUrl}/api/chats/{chatId}");
+            var response = await  _chatHttpClient.GetAsync($"/api/chats/{chatId}");
             if (!response.IsSuccessStatusCode)
             {
                 return false;
             }
 
             var jsonResponse = await response.Content.ReadAsStringAsync();
-            var chatResponse = JsonSerializer.Deserialize<ChatServiceChatResponse>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var chatResponse = JsonSerializer.Deserialize<ChatServiceChatResponse>(jsonResponse,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             return chatResponse?.ParticipantIds?.Contains(userId) ?? false;
         }
