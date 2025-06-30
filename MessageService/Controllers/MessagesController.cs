@@ -1,14 +1,15 @@
-using MessageService.Constants;
+using System.Security.Claims;
 using MessageService.DTOs;
 using MessageService.Models;
 using MessageService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace MessageService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class MessagesController : ControllerBase
 {
     private readonly IMessageRepository _messageRepository;
@@ -36,6 +37,14 @@ public class MessagesController : ControllerBase
     [HttpPut("edit")]
     public async Task<ActionResult> EditMessage([FromBody] EditMessageRequest request)
     {
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var currentUserId))
+        {
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
+        }
+        
+        request.EditorId = currentUserId;
+
         var (success, errorMessage, updatedMessage) = await _messageRepository.EditMessageAsync(request);
 
         if (success) return NoContent();
@@ -57,14 +66,15 @@ public class MessagesController : ControllerBase
     /// Удаляет (помечает как удаленное) существующее сообщение.
     /// </summary>
     [HttpDelete("{messageId:guid}")]
-    public async Task<ActionResult> DeleteMessage(Guid messageId, [FromQuery] Guid deleterId) // deleterId из Query-параметра
+    public async Task<ActionResult> DeleteMessage(Guid messageId)
     {
-        if (deleterId == Guid.Empty)
+        var currentUserIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserIdString) || !Guid.TryParse(currentUserIdString, out var currentUserId))
         {
-            return BadRequest("Deleter ID is required.");
+            return Unauthorized("Не удалось определить ID пользователя из токена.");
         }
-
-        var (success, errorMessage) = await _messageRepository.DeleteMessageAsync(messageId, deleterId);
+        
+        var (success, errorMessage) = await _messageRepository.DeleteMessageAsync(messageId, currentUserId);
 
         if (success)
         {

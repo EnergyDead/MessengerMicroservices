@@ -11,7 +11,27 @@ public class MessageRepository : IMessageRepository
 
     public MessageRepository(AppDbContext db)
     {
-        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _db = db;
+    }
+
+    public async Task<(bool success, string? errorMessage, Message? message)> CreateMessageAsync(Guid chatId,
+        Guid senderId,
+        string content)
+    {
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            ChatId = chatId,
+            SenderId = senderId,
+            Content = content,
+            Timestamp = DateTimeOffset.UtcNow,
+            IsDeleted = false
+        };
+
+        _db.Messages.Add(message);
+        await _db.SaveChangesAsync();
+
+        return (true, null, message);
     }
 
     public async Task<Message?> GetMessageByIdAsync(Guid messageId)
@@ -27,80 +47,60 @@ public class MessageRepository : IMessageRepository
             .ToListAsync();
     }
 
-    public async Task<Message> CreateMessageAsync(Message message)
-    {
-        _db.Messages.Add(message);
-        await _db.SaveChangesAsync();
-        return message;
-    }
-
-    public async Task<(bool Success, string ErrorMessage, Message? UpdatedMessage)> EditMessageAsync(
+    public async Task<(bool success, string? errorMessage, Message? updatedMessage)> EditMessageAsync(
         EditMessageRequest request)
     {
-        var message = await _db.Messages
-            .FirstOrDefaultAsync(m => m.Id == request.MessageId);
+        var message = await _db.Messages.FirstOrDefaultAsync(m => m.Id == request.MessageId);
 
         if (message == null)
         {
-            return (false, $"Message with ID {request.MessageId} not found.", null);
+            return (false, "Message not found.", null);
         }
 
-        // Проверка, что редактировать может только отправитель
         if (message.SenderId != request.EditorId)
         {
-            return (false, "Only the sender can edit their message.", null);
+            return (false, "Only the sender can edit this message.", null);
+        }
+
+        if (message.IsDeleted)
+        {
+            return (false, "Cannot edit a deleted message.", null);
         }
 
         message.Content = request.NewContent;
-        message.IsEdited = true;
         message.Timestamp = DateTimeOffset.UtcNow;
 
-        try
-        {
-            await _db.SaveChangesAsync();
-            return (true, string.Empty, message);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return (false, "Concurrency conflict while saving changes. Please try again.", null);
-        }
-        catch (Exception ex)
-        {
-            return (false, $"An error occurred while editing the message: {ex.Message}", null);
-        }
+        _db.Messages.Update(message);
+        await _db.SaveChangesAsync();
+
+        return (true, null, message);
     }
 
-    public async Task<(bool Success, string ErrorMessage)> DeleteMessageAsync(Guid messageId, Guid deleterId)
+    public async Task<(bool success, string? errorMessage)> DeleteMessageAsync(Guid messageId,
+        Guid deleterId)
     {
         var message = await _db.Messages.FirstOrDefaultAsync(m => m.Id == messageId);
 
         if (message == null)
         {
-            return (false, $"Message with ID {messageId} not found.");
+            return (false, "Message not found.");
         }
 
         if (message.SenderId != deleterId)
         {
-            return (false, "Only the sender can delete their message.");
+            return (false, "Only the sender can delete this message.");
+        }
+
+        if (message.IsDeleted)
+        {
+            return (false, "Message is already marked as deleted.");
         }
 
         message.IsDeleted = true;
-        message.Content = "[Сообщение удалено]";
-        message.IsEdited = true; 
-        message.Timestamp = DateTimeOffset.UtcNow;
 
-        try
-        {
-            await _db.SaveChangesAsync();
-            return (true, string.Empty);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return (false, "Concurrency conflict while saving changes. Please try again.");
-        }
-        catch (Exception ex)
-        {
-            return (false, $"An error occurred while deleting the message: {ex.Message}");
-        }
+        _db.Messages.Update(message);
+        await _db.SaveChangesAsync();
+
+        return (true, null);
     }
 }

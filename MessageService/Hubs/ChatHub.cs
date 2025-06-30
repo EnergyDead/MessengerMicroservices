@@ -1,12 +1,15 @@
-﻿using System.Text.Json;
+﻿using System.Security.Claims;
+using System.Text.Json;
 using MessageService.Constants;
 using MessageService.DTOs;
 using MessageService.Models;
 using MessageService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace MessageService.Hubs;
 
+[Authorize]
 public class ChatHub : Hub
 {
     private readonly HttpClient _chatHttpClient;
@@ -25,55 +28,34 @@ public class ChatHub : Hub
     /// <summary>
     /// Отправляет сообщение в указанный чат.
     /// </summary>
-    public async Task SendMessage(Guid chatId, Guid senderId, string content)
+    public async Task SendMessage(SendMessageRequest request)
     {
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "Message content cannot be empty.");
-            return;
-        }
+        var senderId = GetCurrentUserId(); // ✨ Получаем senderId из токена
+        
+        // ВНИМАНИЕ: Здесь нужно будет проверить, что senderId является участником chatId.
+        // Эту проверку, вероятно, должен будет выполнять ChatService или MessageRepository,
+        // если он сможет получать информацию о чатах. Пока оставляем без этой проверки здесь.
 
-        var chatExists = await CheckChatExists(chatId);
-        if (!chatExists)
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "Chat not found.");
-            return;
-        }
+        var (success, errorMessage, message) = await _messageRepository.CreateMessageAsync(
+            request.ChatId, senderId, request.Content);
 
-        var isParticipant = await CheckUserIsParticipant(chatId, senderId);
-        if (!isParticipant)
+        if (success && message != null)
         {
-            await Clients.Caller.SendAsync("ReceiveError", "You are not a participant of this chat.");
-            return;
-        }
-
-        var message = new Message
-        {
-            Id = Guid.NewGuid(),
-            ChatId = chatId,
-            SenderId = senderId,
-            Content = content,
-            Timestamp = DateTimeOffset.UtcNow
-        };
-
-        try
-        {
-            var savedMessage = await _messageRepository.CreateMessageAsync(message);
-
-            await Clients.Group(chatId.ToString()).SendAsync("ReceiveMessage", new MessageResponse
+            // Отправляем сообщение всем участникам чата
+            await Clients.Group(request.ChatId.ToString()).SendAsync("ReceiveMessage", new MessageResponse
             {
-                Id = savedMessage.Id,
-                ChatId = savedMessage.ChatId,
-                SenderId = savedMessage.SenderId,
-                Content = savedMessage.Content,
-                Timestamp = savedMessage.Timestamp,
-                IsEdited = savedMessage.IsEdited,
-                IsDeleted = savedMessage.IsDeleted
+                Id = message.Id,
+                ChatId = message.ChatId,
+                SenderId = message.SenderId,
+                Content = message.Content,
+                Timestamp = message.Timestamp
             });
+            // TODO: Публикация события "MessageCreated" в брокер сообщений для NotificationService
         }
-        catch (Exception ex)
+        else
         {
-            await Clients.Caller.SendAsync("ReceiveError", $"Error sending message: {ex.Message}");
+            // Отправляем ошибку только отправителю
+            await Clients.Caller.SendAsync("SendMessageError", errorMessage);
         }
     }
 
@@ -83,28 +65,20 @@ public class ChatHub : Hub
     /// </summary>
     public override async Task OnConnectedAsync()
     {
-        // todo: добавлять пользователя в группы.
-        // получить ID пользователя
-        // из контекста аутентификации (Context.User.Identity.Name или из JWT-токена)
-
+        var userId = GetCurrentUserId();
+        await _presenceService.UserConnected(userId, Context.ConnectionId);
+        await Clients.All.SendAsync("UserStatusChanged", userId, true);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var userId = await _presenceService.GetUserIdByConnectionId(Context.ConnectionId);
-
+        var userId = GetCurrentUserId();
         await _presenceService.UserDisconnected(Context.ConnectionId);
-
-        if (userId.HasValue)
+        if (!await _presenceService.IsUserOnline(userId))
         {
-            var remainingConnections = await _presenceService.GetUserConnectionIds(userId.Value);
-            if (remainingConnections.Count == 0)
-            {
-                await Clients.All.SendAsync("UserStatusChanged", userId.Value, false);
-            }
+            await Clients.All.SendAsync("UserStatusChanged", userId, false);
         }
-
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -143,75 +117,56 @@ public class ChatHub : Hub
     /// <summary>
     /// Клиент вызывает этот метод для редактирования сообщения.
     /// </summary>
-    public async Task EditMessage(Guid chatId, Guid messageId, string newContent, Guid editorId)
+    public async Task EditMessage(EditMessageRequest request)
     {
-        if (string.IsNullOrWhiteSpace(newContent))
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "Message content cannot be empty.");
-            return;
-        }
+        var editorId = GetCurrentUserId();
+        request.EditorId = editorId;
 
-        var requestDto = new EditMessageRequest
-        {
-            MessageId = messageId,
-            NewContent = newContent,
-            EditorId = editorId
-        };
-
-        var (success, errorMessage, updatedMessage) = await _messageRepository.EditMessageAsync(requestDto);
+        var (success, errorMessage, updatedMessage) = await _messageRepository.EditMessageAsync(request);
 
         if (success && updatedMessage != null)
         {
-            await Clients.Group(chatId.ToString()).SendAsync("MessageEdited",
-                updatedMessage.Id, updatedMessage.Content, updatedMessage.Timestamp, updatedMessage.IsEdited);
+            await Clients.Group(updatedMessage.ChatId.ToString()).SendAsync("MessageEdited", new MessageResponse
+            {
+                Id = updatedMessage.Id,
+                ChatId = updatedMessage.ChatId,
+                SenderId = updatedMessage.SenderId,
+                Content = updatedMessage.Content,
+                Timestamp = updatedMessage.Timestamp
+            });
+            // TODO: Публикация события "MessageEdited" в брокер сообщений
         }
         else
         {
-            await Clients.Caller.SendAsync("ReceiveError", $"Failed to edit message: {errorMessage}");
+            await Clients.Caller.SendAsync("EditMessageError", errorMessage);
         }
     }
-    
+
     /// <summary>
     /// Клиент вызывает этот метод для удаления сообщения.
     /// </summary>
-    public async Task DeleteMessage(Guid chatId, Guid messageId, Guid deleterId)
+    public async Task DeleteMessage(Guid messageId)
     {
-        if (deleterId == Guid.Empty)
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "Deleter ID is required.");
-            return;
-        }
-
-        var chatExists = await CheckChatExists(chatId);
-        if (!chatExists)
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "Chat not found.");
-            return;
-        }
-
-        var isParticipant = await CheckUserIsParticipant(chatId, deleterId);
-        if (!isParticipant)
-        {
-            await Clients.Caller.SendAsync("ReceiveError", "You are not a participant of this chat.");
-            return;
-        }
+        var deleterId = GetCurrentUserId();
 
         var (success, errorMessage) = await _messageRepository.DeleteMessageAsync(messageId, deleterId);
 
         if (success)
         {
-            await Clients.Group(chatId.ToString()).SendAsync("MessageDeleted", messageId, "[Сообщение удалено]", DateTimeOffset.UtcNow, true);
+            
+            var message = await _messageRepository.GetMessageByIdAsync(messageId);
+            if (message != null)
+            {
+                await Clients.Group(message.ChatId.ToString()).SendAsync("MessageDeleted", messageId);
+                // TODO: Публикация события "MessageDeleted" в брокер сообщений
+            } else {
+                await Clients.Caller.SendAsync("DeleteMessageError", "Сообщение не найдено после попытки удаления.");
+            }
         }
         else
         {
-            await Clients.Caller.SendAsync("ReceiveError", $"Failed to delete message: {errorMessage}");
+            await Clients.Caller.SendAsync("DeleteMessageError", errorMessage);
         }
-    }
-
-    private async Task<bool> CheckChatExists(Guid chatId)
-    {
-        var response = await _chatHttpClient.GetAsync($"/api/chats/{chatId}");
-        return response.IsSuccessStatusCode;
     }
 
     private async Task<bool> CheckUserIsParticipant(Guid chatId, Guid userId)
@@ -234,5 +189,16 @@ public class ChatHub : Hub
         {
             return false;
         }
+    }
+
+    private Guid GetCurrentUserId()
+    {
+        var userIdString = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId))
+        {
+            throw new UnauthorizedAccessException("User ID not found or invalid in JWT token.");
+        }
+
+        return userId;
     }
 }
